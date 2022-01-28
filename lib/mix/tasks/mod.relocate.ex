@@ -249,7 +249,6 @@ defmodule Mix.Tasks.Mod.Relocate do
   defp default_mount(project) do
     [base_path | _] = project_get(project, :elixirc_paths)
     project_get(project, [])
-    otp_app = project_get(project, :app)
 
     mix_mod =
       Mix.Project.get!()
@@ -287,11 +286,10 @@ defmodule Mix.Tasks.Mod.Relocate do
     __mv(mv, cur_path: Path.relative_to_cwd(source))
   end
 
-  defp with_dest(__mv(mod: mod, split: split) = mv, mount) do
+  defp with_dest(__mv(split: split) = mv, mount) do
     mount_point =
       Enum.find(mount, fn __mnt(sprefix: prefix) -> List.starts_with?(split, prefix) end)
 
-    path = __mnt(mount_point, :dir)
     split_rest = unprefix(split, __mnt(mount_point, :sprefix))
     segments = Enum.map(split_rest, &Macro.underscore/1)
     path = Path.join([__mnt(mount_point, :dir) | segments]) <> ".ex"
