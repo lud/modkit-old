@@ -4,7 +4,7 @@ defmodule Mix.Tasks.Mod.Relocate do
 
   require Record
   Record.defrecordp(:__mv, :move, mod: nil, cur_path: nil, good_path: nil, split: nil)
-  Record.defrecordp(:__mnt, :mount_point, namespace: nil, dir: nil, sprefix: nil)
+  Record.defrecordp(:__mnt, :mount_point, namespace: nil, dir: nil, sprefix: nil, flavor: :elixir)
 
   @args_schema strict: [
                  all: :boolean,
@@ -110,6 +110,7 @@ defmodule Mix.Tasks.Mod.Relocate do
         perform? = !!opts[:force]
 
         if perform? do
+          Enum.each(actions, &run_print/1)
           Enum.each(actions, &run_move/1)
         else
           msgbox(
@@ -126,10 +127,10 @@ defmodule Mix.Tasks.Mod.Relocate do
     {actions, _} =
       Enum.flat_map_reduce(moves, %{}, fn move, dirs ->
         {dir_actions, dirs} = ensure_dirs(move, dirs)
-        {[move | dir_actions], dirs}
+        {dir_actions ++ [move], dirs}
       end)
 
-    :lists.reverse(actions)
+    actions
   end
 
   defp ensure_dirs(__mv(good_path: path), dirs) do
@@ -137,14 +138,15 @@ defmodule Mix.Tasks.Mod.Relocate do
   end
 
   defp ensure_dirs(path, acc, dirs) when is_map_key(dirs, path) do
-    {:lists.reverse(acc), dirs}
+    {acc, dirs}
   end
 
   defp ensure_dirs(path, acc, dirs) do
     if File.dir?(path) do
-      {:lists.reverse(acc), dirs}
+      {acc, dirs}
     else
       acc = [{:mkdir, path} | acc]
+      warn("register #{path}")
       dirs = Map.put(dirs, path, true)
       ensure_dirs(Path.dirname(path), acc, dirs)
     end
@@ -224,11 +226,12 @@ defmodule Mix.Tasks.Mod.Relocate do
         warn("multiple modules defined in #{mvs |> hd |> __mv(:cur_path)}:\n#{modules}")
         []
 
-      __mv(mod: mod, cur_path: path) = mv ->
-        notice([
-          "using #{inspect(mod)} as main module\nin: #{path}\nwith modules:\n",
-          Enum.map_join([mv | mvs -- [mv]], "\n", &("  - " <> inspect(__mv(&1, :mod))))
-        ])
+      # __mv(mod: mod, cur_path: path) = mv ->
+      mv ->
+        # notice([
+        #   "using #{inspect(mod)} as main module\nin: #{path}\nwith modules:\n",
+        #   Enum.map_join([mv | mvs -- [mv]], "\n", &("  - " <> inspect(__mv(&1, :mod))))
+        # ])
 
         [mv]
     end
@@ -265,8 +268,14 @@ defmodule Mix.Tasks.Mod.Relocate do
   end
 
   defp build_mount(points) do
-    Enum.map(points, fn {mod, path} ->
-      __mnt(namespace: mod, dir: path, sprefix: Module.split(mod))
+    Enum.map(points, fn {mod, point} ->
+      {flavor, path} =
+        case point do
+          path when is_binary(path) -> {:elixir, path}
+          {:phoenix, path} = fp when is_binary(path) -> fp
+        end
+
+      __mnt(namespace: mod, dir: path, sprefix: Module.split(mod), flavor: flavor)
     end)
   end
 
@@ -287,13 +296,38 @@ defmodule Mix.Tasks.Mod.Relocate do
   end
 
   defp with_dest(__mv(split: split) = mv, mount) do
-    mount_point =
+    __mnt(dir: mount_dir, flavor: flavor, sprefix: sprefix) =
       Enum.find(mount, fn __mnt(sprefix: prefix) -> List.starts_with?(split, prefix) end)
 
-    split_rest = unprefix(split, __mnt(mount_point, :sprefix))
-    segments = Enum.map(split_rest, &Macro.underscore/1)
-    path = Path.join([__mnt(mount_point, :dir) | segments]) <> ".ex"
+    split_rest = unprefix(split, sprefix)
+
+    segments =
+      split_rest
+      |> apply_flavor(flavor)
+      |> Enum.map(&Macro.underscore/1)
+
+    path = Path.join([mount_dir | segments]) <> ".ex"
     __mv(mv, good_path: path)
+  end
+
+  defp apply_flavor([], _) do
+    []
+  end
+
+  defp apply_flavor(splits, :elixir) do
+    splits
+  end
+
+  defp apply_flavor(splits, :phoenix) do
+    last = List.last(splits)
+
+    cond do
+      String.ends_with?(last, "View") -> List.insert_at(splits, -2, "views")
+      String.ends_with?(last, "Controller") -> List.insert_at(splits, -2, "controllers")
+      String.ends_with?(last, "Channel") -> List.insert_at(splits, -2, "channels")
+      String.ends_with?(last, "Socket") -> List.insert_at(splits, -2, "channels")
+      :other -> splits
+    end
   end
 
   defp unprefix([same | mod_rest], [same | pref_rest]) do
