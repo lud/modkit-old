@@ -110,7 +110,6 @@ defmodule Mix.Tasks.Mod.Relocate do
         perform? = !!opts[:force]
 
         if perform? do
-          Enum.each(actions, &run_print/1)
           Enum.each(actions, &run_move/1)
         else
           msgbox(
