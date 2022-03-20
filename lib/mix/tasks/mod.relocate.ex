@@ -112,11 +112,13 @@ defmodule Mix.Tasks.Mod.Relocate do
         if perform? do
           Enum.each(actions, &run_move/1)
         else
-          msgbox(
-            "No actual action will be performed. use the --force flag to make changes to the codebase"
-          )
-
           Enum.each(actions, &run_print/1)
+
+          warn("""
+          No actual action has been performed.
+          Use the --force flag to make changes to the codebase.\
+          """)
+
           abort("Some files are badly named. use the --force flag to perform changes.")
         end
     end
@@ -200,6 +202,10 @@ defmodule Mix.Tasks.Mod.Relocate do
     deviate_path(from, to, [same | acc])
   end
 
+  defp deviate_path(from, to, []) do
+    {".", Path.join(from), Path.join(to)}
+  end
+
   defp deviate_path(from, to, acc) do
     {Path.join(:lists.reverse(acc)), Path.join(from), Path.join(to)}
   end
@@ -213,8 +219,11 @@ defmodule Mix.Tasks.Mod.Relocate do
     end)
   end
 
-  defp parent_mod_or_empty(mvs) do
-    Enum.find(mvs, fn __mv(split: split) ->
+  defp parent_mod_or_empty(all_mvs) do
+    mvs = Enum.reject(all_mvs, &is_protocol_impl?/1)
+
+    mvs
+    |> Enum.find(fn __mv(split: split) ->
       Enum.all?(mvs, fn __mv(split: sub) -> List.starts_with?(sub, split) end)
     end)
     |> case do
@@ -234,6 +243,10 @@ defmodule Mix.Tasks.Mod.Relocate do
 
         [mv]
     end
+  end
+
+  defp is_protocol_impl?(__mv(mod: module)) do
+    {:__impl__, 1} in module.module_info(:exports)
   end
 
   defp build_state(mod) do
