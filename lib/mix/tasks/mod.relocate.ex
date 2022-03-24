@@ -7,11 +7,9 @@ defmodule Mix.Tasks.Mod.Relocate do
   Record.defrecordp(:__mnt, :mount_point, namespace: nil, dir: nil, sprefix: nil, flavor: :elixir)
 
   @args_schema strict: [
-                 all: :boolean,
                  force: :boolean
                ],
                aliases: [
-                 a: :all,
                  f: :force
                ]
 
@@ -40,20 +38,11 @@ defmodule Mix.Tasks.Mod.Relocate do
     abort("only one argument at most is expected, got: #{inspect(args)}")
   end
 
-  defp check_args([_], opts) do
-    if true == opts[:all] do
-      abort("the --all option cannot be set when a module is provided")
-    end
+  defp check_args(_, _opts) do
+    :ok
   end
 
-  defp check_args([], opts) do
-    if true != opts[:all] do
-      abort("either a module or the --all option is required")
-    end
-  end
-
-  defp get_modules(project, [] = _args, opts) do
-    true = opts[:all]
+  defp get_modules(project, [] = _args, _opts) do
     otp_app = project_get(project, :app)
 
     case :application.get_key(otp_app, :modules) do
@@ -62,9 +51,7 @@ defmodule Mix.Tasks.Mod.Relocate do
     end
   end
 
-  defp get_modules(_project, [mod], opts) do
-    false = opts[:all]
-
+  defp get_modules(_project, [mod], _opts) do
     mod =
       case mod do
         "Elixir." <> _ -> mod
