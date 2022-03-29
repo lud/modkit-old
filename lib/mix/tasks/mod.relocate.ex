@@ -4,7 +4,6 @@ defmodule Mix.Tasks.Mod.Relocate do
 
   require Record
   Record.defrecordp(:__mv, :move, mod: nil, cur_path: nil, good_path: nil, split: nil)
-  Record.defrecordp(:__mnt, :mount_point, namespace: nil, dir: nil, sprefix: nil, flavor: :elixir)
 
   @args_schema strict: [
                  force: :boolean
@@ -69,8 +68,7 @@ defmodule Mix.Tasks.Mod.Relocate do
     project = Mix.Project.config()
 
     mount =
-      project_get(project, [:modkit, :mount], default_mount(project))
-      |> build_mount()
+      get_mount_points(project)
       |> print_mount()
 
     mods =
@@ -147,16 +145,16 @@ defmodule Mix.Tasks.Mod.Relocate do
       "move ",
       common,
       "/",
-      Owl.Tag.new(bad_rest, :magenta),
+      magenta(bad_rest),
       "\n  -> ",
       common,
       "/",
-      Owl.Tag.new(good_rest, :green)
+      green(good_rest)
     ])
   end
 
   defp run_print({:mkdir, dir}) do
-    print(["+dir ", Owl.Tag.new(dir, :cyan)])
+    print(["+dir ", cyan(dir)])
   end
 
   defp run_move(move) do
@@ -244,47 +242,17 @@ defmodule Mix.Tasks.Mod.Relocate do
     Enum.any?(mounts, &mounted?(mv, &1))
   end
 
-  defp mounted?(__mv(split: split), __mnt(sprefix: prefix)) do
+  defp mounted?(__mv(split: split), mnt(sprefix: prefix)) do
     List.starts_with?(split, prefix)
-  end
-
-  defp default_mount(project) do
-    [base_path | _] = project_get(project, :elixirc_paths)
-    project_get(project, [])
-
-    mix_mod =
-      Mix.Project.get!()
-      |> Module.split()
-      |> :lists.reverse()
-      |> case do
-        ["MixProject" | rest] -> rest
-      end
-      |> :lists.reverse()
-      |> Module.concat()
-
-    mount_path = Path.join(base_path, Macro.underscore(mix_mod))
-    [{mix_mod, mount_path}]
-  end
-
-  defp build_mount(points) do
-    Enum.map(points, fn {mod, point} ->
-      {flavor, path} =
-        case point do
-          path when is_binary(path) -> {:elixir, path}
-          {:phoenix, path} = fp when is_binary(path) -> fp
-        end
-
-      __mnt(namespace: mod, dir: path, sprefix: Module.split(mod), flavor: flavor)
-    end)
   end
 
   defp print_mount(mount) do
     mount
-    |> Enum.map(fn __mnt(namespace: mod, dir: path) ->
-      ["mount ", Owl.Tag.new(inspect(mod), :cyan), " on ", Owl.Tag.new(path, :cyan)]
+    |> Enum.map(fn mnt(namespace: mod, dir: path) ->
+      ["mount ", cyan(inspect(mod)), " on ", cyan(path)]
     end)
     |> Enum.intersperse("\n")
-    |> msgbox()
+    |> print()
 
     mount
   end
@@ -295,8 +263,8 @@ defmodule Mix.Tasks.Mod.Relocate do
   end
 
   defp with_dest(__mv(split: split) = mv, mount) do
-    __mnt(dir: mount_dir, flavor: flavor, sprefix: sprefix) =
-      Enum.find(mount, fn __mnt(sprefix: prefix) -> List.starts_with?(split, prefix) end)
+    mnt(dir: mount_dir, flavor: flavor, sprefix: sprefix) =
+      Enum.find(mount, fn mnt(sprefix: prefix) -> List.starts_with?(split, prefix) end)
 
     split_rest = unprefix(split, sprefix)
 
@@ -327,14 +295,6 @@ defmodule Mix.Tasks.Mod.Relocate do
       String.ends_with?(last, "Socket") -> List.insert_at(splits, -2, "channels")
       :other -> splits
     end
-  end
-
-  defp unprefix([same | mod_rest], [same | pref_rest]) do
-    unprefix(mod_rest, pref_rest)
-  end
-
-  defp unprefix(mod_rest, []) do
-    mod_rest
   end
 
   defp bad_path?(__mv(cur_path: same, good_path: same)), do: false

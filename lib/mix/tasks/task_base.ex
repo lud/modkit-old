@@ -1,4 +1,7 @@
 defmodule Modkit.TaskBase do
+  require Record
+  Record.defrecord(:mnt, :mount_point, namespace: nil, dir: nil, sprefix: nil, flavor: :elixir)
+
   def project_get(mod, key_or_path) do
     _project_get(mod, key_or_path)
   rescue
@@ -28,51 +31,46 @@ defmodule Modkit.TaskBase do
     fetch_in!(sub_data, keys)
   end
 
-  def abort(errmsg) do
-    Owl.IO.puts(Owl.Tag.new(errmsg, :red))
+  def color(content, color),
+    do: [apply(IO.ANSI, color, []), content, IO.ANSI.default_color()]
+
+  def yellow(content), do: color(content, :yellow)
+  def red(content), do: color(content, :red)
+  def green(content), do: color(content, :green)
+  def blue(content), do: color(content, :blue)
+  def cyan(content), do: color(content, :cyan)
+  def magenta(content), do: color(content, :magenta)
+
+  def abort(iodata) do
+    print(red(iodata))
     System.halt(1)
     Process.sleep(:infinity)
   end
 
-  def success_stop(errmsg) do
-    success(errmsg)
+  def success_stop(iodata) do
+    success(iodata)
     System.halt()
     Process.sleep(:infinity)
   end
 
-  def success(errmsg) do
-    Owl.IO.puts(Owl.Tag.new(errmsg, :green))
+  def success(iodata) do
+    print(green(iodata))
   end
 
-  def danger(errmsg) do
-    Owl.IO.puts(Owl.Tag.new(errmsg, :red))
+  def danger(iodata) do
+    print(red(iodata))
   end
 
-  def warn(errmsg) do
-    Owl.IO.puts(Owl.Tag.new(errmsg, :yellow))
+  def warn(iodata) do
+    print(yellow(iodata))
   end
 
-  def notice(errmsg) do
-    Owl.IO.puts(Owl.Tag.new(errmsg, :magenta))
+  def notice(iodata) do
+    print(magenta(iodata))
   end
 
-  def print(errmsg) do
-    Owl.IO.puts(errmsg)
-  end
-
-  def msgbox(message, opts \\ []) do
-    opts = Keyword.merge(default_box_opts(), opts)
-
-    message
-    |> Owl.Box.new(opts)
-    |> Owl.IO.puts()
-  end
-
-  defp default_box_opts do
-    [
-      padding_right: 1,
-      padding_left: 1
-    ]
+  def print(iodata) do
+    IO.puts(iodata)
   end
 
   def ensure_string(str) when is_binary(str) do
@@ -81,5 +79,53 @@ defmodule Modkit.TaskBase do
 
   def ensure_string(term) do
     inspect(term)
+  end
+
+  def build_mount(points) do
+    Enum.map(points, fn {mod, point} ->
+      {flavor, path} =
+        case point do
+          path when is_binary(path) -> {:elixir, path}
+          {:phoenix, path} = fp when is_binary(path) -> fp
+        end
+
+      mnt(namespace: mod, dir: path, sprefix: Module.split(mod), flavor: flavor)
+    end)
+  end
+
+  def get_mount_points do
+    get_mount_points(Mix.Project.config())
+  end
+
+  def get_mount_points(project) do
+    project
+    |> project_get([:modkit, :mount], default_mount(project))
+    |> build_mount()
+  end
+
+  defp default_mount(project) do
+    [base_path | _] = project_get(project, :elixirc_paths)
+    project_get(project, [])
+
+    mix_mod =
+      Mix.Project.get!()
+      |> Module.split()
+      |> :lists.reverse()
+      |> case do
+        ["MixProject" | rest] -> rest
+      end
+      |> :lists.reverse()
+      |> Module.concat()
+
+    mount_path = Path.join(base_path, Macro.underscore(mix_mod))
+    [{mix_mod, mount_path}]
+  end
+
+  def unprefix([same | mod_rest], [same | pref_rest]) do
+    unprefix(mod_rest, pref_rest)
+  end
+
+  def unprefix(mod_rest, []) do
+    mod_rest
   end
 end
